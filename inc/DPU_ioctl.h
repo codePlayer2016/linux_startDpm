@@ -27,6 +27,13 @@ typedef struct _tagDPUDriver_WaitBufferReadyParam
 	int32_t *pBufStatus;
 } DPUDriver_WaitBufferReadyParam, *DPUDriver_WaitBufferReadyParamPtr;
 
+typedef struct _tagInterruptAndPollParam
+{
+	int interruptAndPollDirect;
+	int interruptAndPollResult;
+	uint32_t pollTime;
+} interruptAndPollParam, *pInterruptAndPollParam;
+
 #define  NULL ((void *)0)
 #define READBUFFER_FULL (0x55aa55aa)
 #define WRITEBUFFER_EMPTY (0xaa55aa55)
@@ -43,5 +50,6 @@ typedef struct _tagDPUDriver_WaitBufferReadyParam
 #define DPU_IO_CMD_CONFIRM _IOW(PCIEDRIVER_MAGIC,0x104,LINKLAYER_IO_TYPE)
 #define DPU_IO_CMD_CHANGEBUFFERSTATUS _IOW(PCIEDRIVER_MAGIC,0x105,LINKLAYER_IO_TYPE)
 
+#define DPU_IO_CMD_INTERRUPT _IOWR(PCIEDRIVER_MAGIC,0x106,interruptAndPollParam)
 #endif
 #endif//_TEST_CMD_H

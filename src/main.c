@@ -162,6 +162,9 @@ int startDpm(Arguments* pArguments)
 
 	LinkLayerBuffer *pLinkLayerBuffer = (LinkLayerBuffer *) malloc(
 			sizeof(LinkLayerBuffer));
+	interruptAndPollParam interruptPollParams;
+	interruptAndPollParam *pInterruptPollParams =
+			(interruptAndPollParam *) &interruptPollParams;
 
 	if (pLinkLayerBuffer != NULL)
 	{
@@ -262,6 +265,37 @@ int startDpm(Arguments* pArguments)
 	}
 
 	// interrupt to DSP.
+	if (retVal == 0)
+	{
+		printf("trigger interrupt to DSP\n");
+		pInterruptPollParams->interruptAndPollDirect = 0;
+
+		retIoVal = ioctl(fdDevice, DPU_IO_CMD_INTERRUPT, pInterruptPollParams);
+
+		if (retIoVal != -1)
+		{
+			printf("trigger the DSP over\n");
+		}
+		else
+		{
+			retVal = -6;
+			printf("ioctl for interrupt error\n");
+		}
+	}
+	// wait the DSP dpm process over and get the information.
+	if(retVal==0)
+	{
+		// the DSP should trigger the Host to interrupt after it had processed the picture.
+		// the isr function should sem_post();
+		// polling()
+		// if polling failure.
+		//		sem_pend(); // wait interrupt.
+		// else {}			// polling sucessful.
+		//
+		//	get the original and subject pictures and coordinate.
+		// clear the semaphore.sure it's be zero. (while(1) { sem_pend() })
+	}
+
 #if 0
 // write the url to output zone.write the urlNum to output zone.
 	if (retVal == 0)

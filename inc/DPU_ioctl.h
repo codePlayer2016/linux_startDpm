@@ -51,5 +51,6 @@ typedef struct _tagInterruptAndPollParam
 #define DPU_IO_CMD_CHANGEBUFFERSTATUS _IOW(PCIEDRIVER_MAGIC,0x105,LINKLAYER_IO_TYPE)
 
 #define DPU_IO_CMD_INTERRUPT _IOWR(PCIEDRIVER_MAGIC,0x106,interruptAndPollParam)
+#define DPU_IO_CMD_WAITDPM _IOWR(PCIEDRIVER_MAGIC,0x107,interruptAndPollParam)
 #endif
 #endif//_TEST_CMD_H

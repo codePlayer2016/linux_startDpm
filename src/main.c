@@ -283,8 +283,30 @@ int startDpm(Arguments* pArguments)
 		}
 	}
 	// wait the DSP dpm process over and get the information.
-	if(retVal==0)
+	if (retVal == 0)
 	{
+		printf("wait the Dpm running in the dsp finished\n");
+		pInterruptPollParams->interruptAndPollDirect = 1;
+		gettimeofday(&downloadStart, NULL);
+		retIoVal = ioctl(fdDevice, DPU_IO_CMD_WAITDPM, pInterruptPollParams);
+
+		if (retIoVal != -1)
+		{
+			printf("the Dpm finished\n");
+			// TODO: get the picture and the coordinate.
+
+			gettimeofday(&downloadEnd, NULL);
+			timeElapse = ((downloadEnd.tv_sec - downloadStart.tv_sec) * 1000000
+					+ (downloadEnd.tv_usec - downloadStart.tv_usec));
+			printf("the dpm elapse %f ms\n", timeElapse/1000);
+		}
+		else
+		{
+			retVal = -6;
+			printf("ioctl for wait dpm failed\n");
+		}
+
+		// TODO:
 		// the DSP should trigger the Host to interrupt after it had processed the picture.
 		// the isr function should sem_post();
 		// polling()

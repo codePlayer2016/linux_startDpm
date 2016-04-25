@@ -27,7 +27,8 @@
 #define WTBUFLENGTH (2*4*1024)
 #define RDBUFLENGTH (4*1024*1024-4*4*1024)
 #define URL_ITEM_SIZE (102)
-
+#define BMP_ALIGN (4)
+#define END_FLAG  (0x55ff)
 typedef struct _tagArguments
 {
 	char *outPutPath;
@@ -35,6 +36,44 @@ typedef struct _tagArguments
 	char *pModel;
 } Arguments;
 
+typedef struct
+{
+	char type1;
+	char type2;
+} BmpFileHead;
+
+typedef struct
+{
+	unsigned int imageSize;
+	unsigned int blank;
+	unsigned int startPosition;
+	unsigned int length;
+	unsigned int width;
+	unsigned int height;
+	unsigned short colorPlane;
+	unsigned short bitColor;
+	unsigned int zipFormat;
+	unsigned int realSize;
+	unsigned int xPels;
+	unsigned int yPels;
+	unsigned int colorUse;
+	unsigned int colorImportant;
+} BmpInfoHead;
+
+typedef struct __tagSubPicInfor
+{
+	uint8_t *subPicAddr[100];
+	uint32_t subPicLength[100];
+	uint8_t subPicNums;
+	uint32_t subWidth[100];
+	uint32_t subHeight[100];
+} SubPicInfor;
+SubPicInfor sPictureInfor;
+typedef struct fileName
+{
+	uint8_t name[100][100];
+} BmpFileName;
+BmpFileName bmpFileName;
 void showHelp(int retVal);
 void showError(int retVal);
 int parseArguments(int argc, char **argv, Arguments* pArguments);
@@ -136,7 +175,89 @@ int parseArguments(int argc, char **argv, Arguments* pArguments)
 	}
 	return (retVal);
 }
+int rgb2bmp(char* imgData,  int imgWidth,  int imgHeight, int picNum)
+{
+	int imgWidthStep = 3 * imgWidth;
+	int channels = 3;
 
+	char *pdst = (char *) malloc(
+			imgWidth * imgHeight * 3 + 54);
+	if (pdst == NULL)
+		printf("ERROR RgbBuf\n");
+	char *addr = pdst;
+	BmpFileHead bmpfilehead =
+	{ 'B', 'M' };
+	BmpInfoHead bmpinfohead;
+	int step = imgWidth * channels; //windowsÎ»ÍŒstep±ØÐëÊÇ4µÄ±¶Êý
+	int modbyte = step & (BMP_ALIGN - 1); //
+	if (modbyte != 0)
+		step += (BMP_ALIGN - modbyte);
+
+	memcpy(addr, &bmpfilehead, sizeof(BmpFileHead));
+	addr += sizeof(BmpFileHead); //move to next section
+
+	bmpinfohead.blank = 0;
+	bmpinfohead.startPosition = sizeof(BmpFileHead) + sizeof(BmpInfoHead);
+	bmpinfohead.realSize = step * imgHeight;
+	bmpinfohead.imageSize = bmpinfohead.realSize + bmpinfohead.startPosition;
+	bmpinfohead.length = 0x28;
+	bmpinfohead.width = imgWidth;
+	bmpinfohead.height = imgHeight;
+	bmpinfohead.colorPlane = 0x01;
+	bmpinfohead.bitColor = 8 * channels;
+	bmpinfohead.zipFormat = 0;
+	bmpinfohead.xPels = 0xEC4;
+	bmpinfohead.yPels = 0xEC4;
+	bmpinfohead.colorUse = 0;
+	bmpinfohead.colorImportant = 0;
+
+	memcpy(addr, &bmpinfohead, sizeof(BmpInfoHead));
+	addr += sizeof(BmpInfoHead); //move to next section
+	char *pdata = imgData;
+	int idx;
+	for (idx = imgHeight - 1; idx >= 0; idx--)
+	{
+		memcpy(addr, pdata, step);
+		addr += step; //move to next section
+		pdata += imgWidthStep;
+	}
+
+	sprintf(bmpFileName.name[picNum], "test_%d.bmp",picNum);
+	FILE* p = fopen(((char*)bmpFileName.name[picNum]), "wb+");
+	fwrite(pdst, 1, imgWidth * imgHeight * 3 + 54, p);
+	fclose(p);
+	free(pdst);
+	return bmpinfohead.imageSize;
+}
+void GetDpmProcessPic(uint32_t *srcBuf){
+	sPictureInfor.subPicNums=0;
+	int picNum=0;
+	uint32_t *pSrc=srcBuf;
+	while((*pSrc) != END_FLAG)
+	{
+
+		memcpy((char*)&sPictureInfor.subWidth[picNum],pSrc,sizeof(int));
+		pSrc++;
+
+		memcpy((char*)&sPictureInfor.subHeight[picNum],pSrc,sizeof(int));
+		pSrc++;
+
+		memcpy((char*)&sPictureInfor.subPicLength[picNum],pSrc,sizeof(int));
+		pSrc++;
+
+		sPictureInfor.subPicAddr[picNum]=(uint8_t *)malloc(sPictureInfor.subPicLength[picNum]*sizeof(char));
+		memcpy(sPictureInfor.subPicAddr[picNum],((uint8_t *)pSrc),sPictureInfor.subPicLength[picNum]);
+		pSrc = (uint32_t *) ((uint8_t *) (pSrc)+ sPictureInfor.subPicLength[picNum]);
+
+		//rgb to bmp for see picture
+		rgb2bmp((char *) sPictureInfor.subPicAddr[picNum], sPictureInfor.subWidth[picNum], sPictureInfor.subHeight[picNum],picNum);
+
+		sPictureInfor.subPicNums++;
+		picNum++;
+		free(sPictureInfor.subPicAddr[picNum]);
+	}
+
+}
 int startDpm(Arguments* pArguments)
 {
 	int retVal = 0;
@@ -328,6 +449,8 @@ int startDpm(Arguments* pArguments)
 			timeElapse = ((downloadEnd.tv_sec - downloadStart.tv_sec) * 1000000
 					+ (downloadEnd.tv_usec - downloadStart.tv_usec));
 			printf("the dpm elapse %f ms\n", timeElapse / 1000);
+			//get dpm sub picture info
+			GetDpmProcessPic(pLinkLayerBuffer->pInBuffer);
 
 		}
 		else

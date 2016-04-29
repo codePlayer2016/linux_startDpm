@@ -19,13 +19,15 @@ TEMPDIR:=$(PRJ_HOME)/tempdir
 #############################complie flags
 CFLAGS := -Wall -O -g
 CFLAGS += -I ${INC}
+
+LDFLAGS:=-L /usr/local/lib -ljpeg
 #CFLAGS += -I ${KERNEL_INCLUDE}
 #CFLAGS += -I /usr/src/linux-headers-2.6.32-5-common/arch/x86/include
 ##############################execute file
 TARGET := start-dmp
 all:$(TARGET)
 $(TARGET):$(OBJS)	
-	$(CC) -o $@ $(OBJS)	
+	$(CC) -o $@ $(OBJS)	$(LDFLAGS)
 	rm -f $(OBJS)
 	mv -f $(TARGET) $(OUTDIR)/$(TARGET)
 #$(OBJS):$(DIRSRC)

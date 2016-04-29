@@ -21,6 +21,9 @@
 #include"DPU_ioctl.h"
 #include "LinkLayer.h"
 
+#include <setjmp.h>
+
+#include "jpeglib.h"
 #define IMG_SIZE4_DSP (0x100000)
 #define PAGE_SIZE (0x1000)
 #define WAITTIME (0x07FFFFFF)
@@ -29,6 +32,9 @@
 #define URL_ITEM_SIZE (102)
 #define BMP_ALIGN (4)
 #define END_FLAG  (0x55ff)
+
+#define JPEG_QUALITY 100 //图片质量
+
 typedef struct _tagArguments
 {
 	char *outPutPath;
@@ -78,6 +84,7 @@ void showHelp(int retVal);
 void showError(int retVal);
 int parseArguments(int argc, char **argv, Arguments* pArguments);
 int startDpm(Arguments* pArguments);
+int bgr2rgb(char* pImgData, int imgWidth, int imgHeight);
 
 int main(int argc, char **argv)
 {
@@ -175,13 +182,84 @@ int parseArguments(int argc, char **argv, Arguments* pArguments)
 	}
 	return (retVal);
 }
-int rgb2bmp(char* imgData,  int imgWidth,  int imgHeight, int picNum)
+
+int rgb2jpeg(char *pRgbData, int rgbWidth, int rgbHeigth, char *pJpegfileName)
+{
+	int retVal = 0;
+	int indexWidth = 0;
+
+
+	FILE *outfile = NULL;
+
+	struct jpeg_compress_struct cinfo;
+	struct jpeg_error_mgr jerr;
+
+	if ((outfile = fopen(pJpegfileName, "wb")) == NULL)
+	{
+		fprintf(stderr, "can't open %s\n", pJpegfileName);
+		retVal = -1;
+		exit(1);
+	}
+
+	cinfo.err = jpeg_std_error(&jerr);
+	jpeg_create_compress(&cinfo);
+
+	jpeg_stdio_dest(&cinfo, outfile);
+
+	cinfo.image_height = rgbHeigth;
+	cinfo.image_width = rgbWidth;
+	cinfo.input_components = 3;
+	cinfo.in_color_space = JCS_RGB;
+	jpeg_set_defaults(&cinfo);
+	//jpeg_set_quality(&cinfo, JPEG_QUALITY, TRUE );
+	jpeg_start_compress(&cinfo, TRUE);
+
+	JSAMPROW row_pointer[1]; /* pointer to a single row */
+	int row_stride; /* physical row width in buffer */
+
+	row_stride = cinfo.image_width * 3; /* JSAMPLEs per row in image_buffer */
+
+	bgr2rgb(pRgbData, rgbWidth, rgbHeigth);
+
+	for (indexWidth = 0; indexWidth < cinfo.image_height; indexWidth++)
+	{
+		row_pointer[0] =
+				(JSAMPROW) (pRgbData + cinfo.next_scanline * row_stride);
+		jpeg_write_scanlines(&cinfo, row_pointer, 1);
+	}
+	jpeg_finish_compress(&cinfo);
+	jpeg_destroy_compress(&cinfo);
+
+	fclose(outfile);
+	return (retVal);
+
+};
+int bgr2rgb(char* pImgData, int imgWidth, int imgHeight)
+{
+	int widthIndex = 0;
+	int heigthIndex = 0;
+	unsigned char tempVal = 0;
+	char *pRow = NULL;
+
+	for (heigthIndex = 0; heigthIndex < imgHeight; heigthIndex++)
+	{
+		pRow = (pImgData + (heigthIndex * imgWidth*3));
+		for (widthIndex = 0; widthIndex < imgWidth; widthIndex++)
+		{
+			tempVal = pRow[0];
+			pRow[0] = pRow[2];
+			pRow[2] = tempVal;
+			pRow += 3;
+		}
+	}
+	return (0);
+}
+int rgb2bmp(char* imgData, int imgWidth, int imgHeight, int picNum)
 {
 	int imgWidthStep = 3 * imgWidth;
 	int channels = 3;
 
-	char *pdst = (char *) malloc(
-			imgWidth * imgHeight * 3 + 54);
+	char *pdst = (char *) malloc(imgWidth * imgHeight * 3 + 54);
 	if (pdst == NULL)
 		printf("ERROR RgbBuf\n");
 	char *addr = pdst;
@@ -222,36 +300,45 @@ int rgb2bmp(char* imgData,  int imgWidth,  int imgHeight, int picNum)
 		pdata += imgWidthStep;
 	}
 
-	sprintf(bmpFileName.name[picNum], "test_%d.bmp",picNum);
-	FILE* p = fopen(((char*)bmpFileName.name[picNum]), "wb+");
+	sprintf(bmpFileName.name[picNum], "test_%d.bmp", picNum);
+	FILE* p = fopen(((char*) bmpFileName.name[picNum]), "wb+");
 	fwrite(pdst, 1, imgWidth * imgHeight * 3 + 54, p);
 	fclose(p);
 	free(pdst);
 	return bmpinfohead.imageSize;
 }
-void GetDpmProcessPic(uint32_t *srcBuf){
-	sPictureInfor.subPicNums=0;
-	int picNum=0;
-	uint32_t *pSrc=srcBuf;
-	while((*pSrc) != END_FLAG)
+void GetDpmProcessPic(uint32_t *srcBuf)
+{
+	sPictureInfor.subPicNums = 0;
+	int picNum = 0;
+	char jpegName[10];
+	uint32_t *pSrc = srcBuf;
+	while ((*pSrc) != END_FLAG)
 	{
 
-		memcpy((char*)&sPictureInfor.subWidth[picNum],pSrc,sizeof(int));
+		memcpy((char*) &sPictureInfor.subWidth[picNum], pSrc, sizeof(int));
 		pSrc++;
 
-		memcpy((char*)&sPictureInfor.subHeight[picNum],pSrc,sizeof(int));
+		memcpy((char*) &sPictureInfor.subHeight[picNum], pSrc, sizeof(int));
 		pSrc++;
 
-		memcpy((char*)&sPictureInfor.subPicLength[picNum],pSrc,sizeof(int));
+		memcpy((char*) &sPictureInfor.subPicLength[picNum], pSrc, sizeof(int));
 		pSrc++;
 
-		sPictureInfor.subPicAddr[picNum]=(uint8_t *)malloc(sPictureInfor.subPicLength[picNum]*sizeof(char));
-		memcpy(sPictureInfor.subPicAddr[picNum],((uint8_t *)pSrc),sPictureInfor.subPicLength[picNum]);
-		pSrc = (uint32_t *) ((uint8_t *) (pSrc)+ sPictureInfor.subPicLength[picNum]);
+		sPictureInfor.subPicAddr[picNum] = (uint8_t *) malloc(
+				sPictureInfor.subPicLength[picNum] * sizeof(char));
+		memcpy(sPictureInfor.subPicAddr[picNum], ((uint8_t *) pSrc),
+				sPictureInfor.subPicLength[picNum]);
+		pSrc = (uint32_t *) ((uint8_t *) (pSrc)
+				+ sPictureInfor.subPicLength[picNum]);
 
 		//rgb to bmp for see picture
-		rgb2bmp((char *) sPictureInfor.subPicAddr[picNum], sPictureInfor.subWidth[picNum], sPictureInfor.subHeight[picNum],picNum);
-
+		//rgb2bmp((char *) sPictureInfor.subPicAddr[picNum], sPictureInfor.subWidth[picNum], sPictureInfor.subHeight[picNum],picNum);
+		sprintf(jpegName, "%d.jpg", picNum);
+		printf("start compress the jpeg\n");
+		rgb2jpeg((char *) sPictureInfor.subPicAddr[picNum],
+				sPictureInfor.subWidth[picNum], sPictureInfor.subHeight[picNum],
+				jpegName);
 		sPictureInfor.subPicNums++;
 		picNum++;
 		free(sPictureInfor.subPicAddr[picNum]);

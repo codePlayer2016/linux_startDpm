@@ -31,7 +31,7 @@
 #define RDBUFLENGTH (4*1024*1024-4*4*1024)
 #define URL_ITEM_SIZE (102)
 #define BMP_ALIGN (4)
-#define END_FLAG  (0x55ff)
+#define END_FLAG  (0xffaa)
 
 #define JPEG_QUALITY 100 //图片质量
 
@@ -188,7 +188,6 @@ int rgb2jpeg(char *pRgbData, int rgbWidth, int rgbHeigth, char *pJpegfileName)
 	int retVal = 0;
 	int indexWidth = 0;
 
-
 	FILE *outfile = NULL;
 
 	struct jpeg_compress_struct cinfo;
@@ -233,7 +232,8 @@ int rgb2jpeg(char *pRgbData, int rgbWidth, int rgbHeigth, char *pJpegfileName)
 	fclose(outfile);
 	return (retVal);
 
-};
+}
+;
 int bgr2rgb(char* pImgData, int imgWidth, int imgHeight)
 {
 	int widthIndex = 0;
@@ -243,7 +243,7 @@ int bgr2rgb(char* pImgData, int imgWidth, int imgHeight)
 
 	for (heigthIndex = 0; heigthIndex < imgHeight; heigthIndex++)
 	{
-		pRow = (pImgData + (heigthIndex * imgWidth*3));
+		pRow = (pImgData + (heigthIndex * imgWidth * 3));
 		for (widthIndex = 0; widthIndex < imgWidth; widthIndex++)
 		{
 			tempVal = pRow[0];
@@ -311,30 +311,52 @@ void GetDpmProcessPic(uint32_t *srcBuf)
 {
 	sPictureInfor.subPicNums = 0;
 	int picNum = 0;
-	char jpegName[10];
+	char jpegName[40];
+	char urlString[120];
+	int orignalPicLength;
+	uint8_t *pOriginalPic;
 	uint32_t *pSrc = srcBuf;
+	printf("the start address is %u\n",(int)pSrc);
 	while ((*pSrc) != END_FLAG)
 	{
 
-		memcpy((char*) &sPictureInfor.subWidth[picNum], pSrc, sizeof(int));
-		pSrc++;
+		memcpy(urlString, pSrc, 120);
+		pSrc = (pSrc + 120 / 4);
+		printf("the url is %s\n", urlString);
 
-		memcpy((char*) &sPictureInfor.subHeight[picNum], pSrc, sizeof(int));
-		pSrc++;
+		memcpy(jpegName, pSrc, 40);
+		pSrc = (pSrc + 40 / 4);
+		printf("the original jpeg name is %s\n", jpegName);
 
-		memcpy((char*) &sPictureInfor.subPicLength[picNum], pSrc, sizeof(int));
-		pSrc++;
+		memcpy(&orignalPicLength, pSrc, 4);
+		pSrc = (pSrc + 4 / 4);
+		printf("the original jpeg length is %d\n", orignalPicLength);
+
+		pOriginalPic = (uint8_t *) malloc(orignalPicLength);
+		memcpy(pOriginalPic, pSrc, orignalPicLength);
+		pSrc = (pSrc + (orignalPicLength + 4) / 4);
+
+		memcpy(&sPictureInfor.subWidth[picNum], pSrc, sizeof(int));
+		printf("subWidth is %d\n", sPictureInfor.subWidth[picNum]);
+		pSrc += 1;
+
+		memcpy(&sPictureInfor.subHeight[picNum], pSrc, sizeof(int));
+		printf("subHeight is %d\n", sPictureInfor.subHeight[picNum]);
+		pSrc += 1;
+
+		memcpy(&sPictureInfor.subPicLength[picNum], pSrc, sizeof(int));
+		printf("picLength is %d\n", sPictureInfor.subPicLength[picNum]);
+		pSrc += 1;
 
 		sPictureInfor.subPicAddr[picNum] = (uint8_t *) malloc(
 				sPictureInfor.subPicLength[picNum] * sizeof(char));
 		memcpy(sPictureInfor.subPicAddr[picNum], ((uint8_t *) pSrc),
 				sPictureInfor.subPicLength[picNum]);
-		pSrc = (uint32_t *) ((uint8_t *) (pSrc)
-				+ sPictureInfor.subPicLength[picNum]);
-
+		printf("the %d subpic address is %u\n",(picNum+1),(int)pSrc);
+		pSrc = (pSrc + (sPictureInfor.subPicLength[picNum] + 4) / 4);
 		//rgb to bmp for see picture
 		//rgb2bmp((char *) sPictureInfor.subPicAddr[picNum], sPictureInfor.subWidth[picNum], sPictureInfor.subHeight[picNum],picNum);
-		sprintf(jpegName, "%d.jpg", picNum);
+		sprintf(jpegName, "%d.jpg", (picNum + 1));
 		printf("start compress the jpeg\n");
 		rgb2jpeg((char *) sPictureInfor.subPicAddr[picNum],
 				sPictureInfor.subWidth[picNum], sPictureInfor.subHeight[picNum],
@@ -343,6 +365,7 @@ void GetDpmProcessPic(uint32_t *srcBuf)
 		picNum++;
 		free(sPictureInfor.subPicAddr[picNum]);
 	}
+	printf("the end address is %u\n",(int)pSrc);
 
 }
 int startDpm(Arguments* pArguments)

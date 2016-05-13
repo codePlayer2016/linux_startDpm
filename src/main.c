@@ -307,8 +307,10 @@ int rgb2bmp(char* imgData, int imgWidth, int imgHeight, int picNum)
 	free(pdst);
 	return bmpinfohead.imageSize;
 }
-void GetDpmProcessPic(uint32_t *srcBuf)
+int GetDpmProcessPic(uint32_t *srcBuf, int fdDevice)
 {
+	int retVal = 0;
+	int retIoVal = 0;
 	sPictureInfor.subPicNums = 0;
 	int picNum = 0;
 	char jpegName[40];
@@ -316,48 +318,60 @@ void GetDpmProcessPic(uint32_t *srcBuf)
 	int orignalPicLength;
 	uint8_t *pOriginalPic;
 	uint32_t *pSrc = srcBuf;
-	printf("the start address is %u\n",(int)pSrc);
+	printf("the start address is %u\n", (int) pSrc);
 	while ((*pSrc) != END_FLAG)
 	{
 
 		memcpy(urlString, pSrc, 120);
 		pSrc = (pSrc + 120 / 4);
-		printf("the url is %s\n", urlString);
+		//printf("the url is %s\n", urlString);
 
 		memcpy(jpegName, pSrc, 40);
 		pSrc = (pSrc + 40 / 4);
-		printf("the original jpeg name is %s\n", jpegName);
+		//printf("the original jpeg name is %s\n", jpegName);
 
 		memcpy(&orignalPicLength, pSrc, 4);
 		pSrc = (pSrc + 4 / 4);
-		printf("the original jpeg length is %d\n", orignalPicLength);
+		//printf("the original jpeg length is %d\n", orignalPicLength);
 
 		pOriginalPic = (uint8_t *) malloc(orignalPicLength);
 		memcpy(pOriginalPic, pSrc, orignalPicLength);
 		pSrc = (pSrc + (orignalPicLength + 4) / 4);
 
 		memcpy(&sPictureInfor.subWidth[picNum], pSrc, sizeof(int));
-		printf("subWidth is %d\n", sPictureInfor.subWidth[picNum]);
+		//printf("subWidth is %d\n", sPictureInfor.subWidth[picNum]);
 		pSrc += 1;
 
 		memcpy(&sPictureInfor.subHeight[picNum], pSrc, sizeof(int));
-		printf("subHeight is %d\n", sPictureInfor.subHeight[picNum]);
+		//printf("subHeight is %d\n", sPictureInfor.subHeight[picNum]);
 		pSrc += 1;
 
 		memcpy(&sPictureInfor.subPicLength[picNum], pSrc, sizeof(int));
-		printf("picLength is %d\n", sPictureInfor.subPicLength[picNum]);
+		//printf("picLength is %d\n", sPictureInfor.subPicLength[picNum]);
 		pSrc += 1;
 
 		sPictureInfor.subPicAddr[picNum] = (uint8_t *) malloc(
 				sPictureInfor.subPicLength[picNum] * sizeof(char));
 		memcpy(sPictureInfor.subPicAddr[picNum], ((uint8_t *) pSrc),
 				sPictureInfor.subPicLength[picNum]);
-		printf("the %d subpic address is %u\n",(picNum+1),(int)pSrc);
+		//printf("the %d subpic address is %u\n", (picNum + 1), (int) pSrc);
 		pSrc = (pSrc + (sPictureInfor.subPicLength[picNum] + 4) / 4);
-		//rgb to bmp for see picture
-		//rgb2bmp((char *) sPictureInfor.subPicAddr[picNum], sPictureInfor.subWidth[picNum], sPictureInfor.subHeight[picNum],picNum);
-		sprintf(jpegName, "%d.jpg", (picNum + 1));
-		printf("start compress the jpeg\n");
+		//after pc get data,we should set pc_over_ctl to notify dsp,pc have get finish data
+		int ovConfig = LINKLAYER_IO_OVER;
+		retIoVal = ioctl(fdDevice, DPU_IO_CMD_CHANGOVERREG, &ovConfig);
+
+		if (retIoVal != -1)
+		{
+			//printf("clear dpmOver reg success\n");
+		}
+		else
+		{
+			retVal = -7;
+			printf("clear dpmOver reg failed\n");
+		}
+		sprintf(jpegName, "%s", jpegName);
+		//sprintf(jpegName, "%d.jpg", (picNum + 1));
+		//printf("start compress the jpeg\n");
 		rgb2jpeg((char *) sPictureInfor.subPicAddr[picNum],
 				sPictureInfor.subWidth[picNum], sPictureInfor.subHeight[picNum],
 				jpegName);
@@ -365,8 +379,8 @@ void GetDpmProcessPic(uint32_t *srcBuf)
 		picNum++;
 		free(sPictureInfor.subPicAddr[picNum]);
 	}
-	printf("the end address is %u\n",(int)pSrc);
-
+	printf("the end address is %u\n", (int) pSrc);
+	return retVal;
 }
 int startDpm(Arguments* pArguments)
 {
@@ -482,11 +496,10 @@ int startDpm(Arguments* pArguments)
 			printf(
 					"g_pMmapAddr=0x%x,pDownloadPicNums=0x%x,pDownloadPicNums=0x%x\n",
 					g_pMmapAddr, pDownloadPicNums, pFailedPicNUms);
-
-			waitWriteBufferReadyParam.waitType = LINKLAYER_IO_WRITE;
+			waitWriteBufferReadyParam.waitType = LINKLAYER_IO_START;
 			waitWriteBufferReadyParam.pendTime = WAITTIME;
 			waitWriteBufferReadyParam.pBufStatus = &status;
-			retIoVal = ioctl(fdDevice, DPU_IO_CMD_WAITBUFFERREADY,
+			retIoVal = ioctl(fdDevice, DPU_IO_CMD_WAITDPMSTART,
 					&waitWriteBufferReadyParam); // dsp should init the RD register to empty in DSP.
 		}
 		else
@@ -499,7 +512,8 @@ int startDpm(Arguments* pArguments)
 	if (retVal == 0)
 	{
 		printf("change dpmstart reg \n");
-		retIoVal = ioctl(fdDevice, DPU_IO_CMD_CHANGEREG, NULL);
+		int stConfig = LINKLAYER_IO_START;
+		retIoVal = ioctl(fdDevice, DPU_IO_CMD_CHANGEREG, &stConfig);
 		if (retIoVal != -1)
 		{
 			printf("change dpmstart reg over\n");
@@ -514,8 +528,8 @@ int startDpm(Arguments* pArguments)
 	if (retVal == 0)
 	{
 		printf("clear dpmOver reg");
-
-		retIoVal = ioctl(fdDevice, DPU_IO_CMD_CLRINTERRUPT, NULL);
+		int ovConfig = LINKLAYER_IO_OVER;
+		retIoVal = ioctl(fdDevice, DPU_IO_CMD_CHANGOVERREG, &ovConfig);
 
 		if (retIoVal != -1)
 		{
@@ -560,13 +574,13 @@ int startDpm(Arguments* pArguments)
 					+ (downloadEnd.tv_usec - downloadStart.tv_usec));
 			printf("the dpm elapse %f ms\n", timeElapse / 1000);
 			//get dpm sub picture info
-			GetDpmProcessPic(pLinkLayerBuffer->pInBuffer);
+			GetDpmProcessPic(pLinkLayerBuffer->pInBuffer, fdDevice);
 
 		}
 		else
 		{
 			retVal = -8;
-			printf("ioctl for DPU_IO_CMD_DPM_TIMEOUT failed\n");
+			printf("ioctl for DPU_IO_CMD_WAITDPM failed\n");
 		}
 
 	}

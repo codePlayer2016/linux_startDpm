@@ -1,7 +1,8 @@
 #ifndef _TEST_CMD_H
 #define _TEST_CMD_H
 
-#include <sys/ioctl.h>
+//#include <sys/ioctl.h>
+#include <linux/ioctl.h>
 #if 0
 typedef enum IO_CMD
 {
@@ -54,6 +55,7 @@ typedef struct _tagInterruptAndPollParam
 
 #define DPU_IO_CMD_INTERRUPT _IOWR(PCIEDRIVER_MAGIC,0x106,interruptAndPollParam)
 #define DPU_IO_CMD_WAITDPM _IOWR(PCIEDRIVER_MAGIC,0x107,interruptAndPollParam)
+
 #define  DPU_IO_CMD_WAITDPMSTART _IOWR(PCIEDRIVER_MAGIC,0x110,DPUDriver_WaitBufferReadyParam)
 #define DPU_IO_CMD_CHANGEREG _IOW(PCIEDRIVER_MAGIC,0x111,LINKLAYER_IO_TYPE)
 #define DPU_IO_CMD_CHANGOVERREG _IOWR(PCIEDRIVER_MAGIC,0x112,LINKLAYER_IO_TYPE)

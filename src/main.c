@@ -73,8 +73,19 @@ typedef struct __tagSubPicInfor
 	uint8_t subPicNums;
 	uint32_t subWidth[100];
 	uint32_t subHeight[100];
+	uint32_t subXpoint[100];
+	uint32_t subYpoint[100];
 } SubPicInfor;
 SubPicInfor sPictureInfor;
+typedef struct __tagOriginalPicInfor
+{
+	uint8_t jpegName[100][40];
+	uint8_t urlString[100][120];
+	uint32_t originalPicLength[100];
+	uint8_t *originalPicAddr[100];
+} OriginalPicInfor;
+OriginalPicInfor oPictureInfor;
+
 typedef struct fileName
 {
 	uint8_t name[100][100];
@@ -183,22 +194,13 @@ int parseArguments(int argc, char **argv, Arguments* pArguments)
 	return (retVal);
 }
 
-int rgb2jpeg(char *pRgbData, int rgbWidth, int rgbHeigth, char *pJpegfileName)
+int rgb2jpeg(char *pRgbData, int rgbWidth, int rgbHeigth, FILE *outfile)
 {
 	int retVal = 0;
 	int indexWidth = 0;
 
-	FILE *outfile = NULL;
-
 	struct jpeg_compress_struct cinfo;
 	struct jpeg_error_mgr jerr;
-
-	if ((outfile = fopen(pJpegfileName, "wb")) == NULL)
-	{
-		fprintf(stderr, "can't open %s\n", pJpegfileName);
-		retVal = -1;
-		exit(1);
-	}
 
 	cinfo.err = jpeg_std_error(&jerr);
 	jpeg_create_compress(&cinfo);
@@ -233,7 +235,52 @@ int rgb2jpeg(char *pRgbData, int rgbWidth, int rgbHeigth, char *pJpegfileName)
 	return (retVal);
 
 }
-;
+int saveOriginalPicture(char *pRgbData, int originalLength, FILE *oriOutFile)
+{
+	int retVal = 0;
+	int writeLength = 0;
+
+	struct jpeg_compress_struct cinfo;
+	struct jpeg_error_mgr jerr;
+
+	writeLength = fwrite(pRgbData, originalLength, 1, oriOutFile);
+	if (writeLength <= 0)
+	{
+		fprintf(stderr, "file fwrite error\n");
+		retVal = -1;
+		exit(1);
+	}
+	fclose(oriOutFile);
+	return (retVal);
+}
+int saveUrlToManifest(char *urlName, int xPoint, int yPoint, int width,
+		int height, FILE *manOutFile)
+{
+	int retVal = 0;
+	char x[4],y[4],w[4],h[4];
+	char locPosition[100];
+
+	sprintf(x,"%d",xPoint);
+	sprintf(y,"%d",yPoint);
+	sprintf(w,"%d",width);
+	sprintf(h,"%d",height);
+	strcpy(locPosition, x);
+	strcat(locPosition, ",");
+	strcat(locPosition, y);
+	strcat(locPosition, ",");
+	strcat(locPosition, w);
+	strcat(locPosition, ",");
+	strcat(locPosition, h);
+	//write urlName
+	fputs(urlName,manOutFile);
+	fputc('\n',manOutFile);
+	//write location position
+	fputs(locPosition,manOutFile);
+
+	fclose(manOutFile);
+	return (retVal);
+
+}
 int bgr2rgb(char* pImgData, int imgWidth, int imgHeight)
 {
 	int widthIndex = 0;
@@ -307,54 +354,59 @@ int rgb2bmp(char* imgData, int imgWidth, int imgHeight, int picNum)
 	free(pdst);
 	return bmpinfohead.imageSize;
 }
-int GetDpmProcessPic(uint32_t *srcBuf, int fdDevice)
+int GetDpmProcessPic(uint32_t *srcBuf, int fdDevice, Arguments* pArguments)
 {
 	int retVal = 0;
 	int retIoVal = 0;
 	sPictureInfor.subPicNums = 0;
 	int picNum = 0;
-	char jpegName[40];
-	char urlString[120];
-	int orignalPicLength;
-	uint8_t *pOriginalPic;
+	FILE *oriOutFile = NULL;
+	FILE *subOutFile = NULL;
+	FILE *manOutFile = NULL;
+
+	char oJpegName[40];
+	char sJpegName[40];
 	uint32_t *pSrc = srcBuf;
-	printf("the start address is %u\n", (int) pSrc);
 	while ((*pSrc) != END_FLAG)
 	{
+		/***********************get original picture******************************/
 
-		memcpy(urlString, pSrc, 120);
+		memcpy(oPictureInfor.urlString[picNum], pSrc, 120);
 		pSrc = (pSrc + 120 / 4);
-		//printf("the url is %s\n", urlString);
 
-		memcpy(jpegName, pSrc, 40);
+		memcpy(oPictureInfor.jpegName[picNum], pSrc, 40);
 		pSrc = (pSrc + 40 / 4);
-		//printf("the original jpeg name is %s\n", jpegName);
 
-		memcpy(&orignalPicLength, pSrc, 4);
-		pSrc = (pSrc + 4 / 4);
-		//printf("the original jpeg length is %d\n", orignalPicLength);
+		memcpy(&oPictureInfor.originalPicLength[picNum], pSrc, 4);
+		pSrc += 1;
 
-		pOriginalPic = (uint8_t *) malloc(orignalPicLength);
-		memcpy(pOriginalPic, pSrc, orignalPicLength);
-		pSrc = (pSrc + (orignalPicLength + 4) / 4);
+		oPictureInfor.originalPicAddr[picNum] = (uint8_t *) malloc(
+				oPictureInfor.originalPicLength[picNum] * sizeof(char));
+		memcpy(oPictureInfor.originalPicAddr[picNum], ((uint8_t *) pSrc),
+				oPictureInfor.originalPicLength[picNum]);
+		pSrc = (pSrc + (oPictureInfor.originalPicLength[picNum] + 4) / 4);
 
+		/***********************get sub picture******************************/
 		memcpy(&sPictureInfor.subWidth[picNum], pSrc, sizeof(int));
-		//printf("subWidth is %d\n", sPictureInfor.subWidth[picNum]);
 		pSrc += 1;
 
 		memcpy(&sPictureInfor.subHeight[picNum], pSrc, sizeof(int));
-		//printf("subHeight is %d\n", sPictureInfor.subHeight[picNum]);
+		pSrc += 1;
+
+		memcpy(&sPictureInfor.subXpoint[picNum], pSrc, sizeof(int));
+		pSrc += 1;
+
+		memcpy(&sPictureInfor.subYpoint[picNum], pSrc, sizeof(int));
 		pSrc += 1;
 
 		memcpy(&sPictureInfor.subPicLength[picNum], pSrc, sizeof(int));
-		//printf("picLength is %d\n", sPictureInfor.subPicLength[picNum]);
 		pSrc += 1;
 
 		sPictureInfor.subPicAddr[picNum] = (uint8_t *) malloc(
 				sPictureInfor.subPicLength[picNum] * sizeof(char));
 		memcpy(sPictureInfor.subPicAddr[picNum], ((uint8_t *) pSrc),
 				sPictureInfor.subPicLength[picNum]);
-		//printf("the %d subpic address is %u\n", (picNum + 1), (int) pSrc);
+
 		pSrc = (pSrc + (sPictureInfor.subPicLength[picNum] + 4) / 4);
 		//after pc get data,we should set pc_over_ctl to notify dsp,pc have get finish data
 		int ovConfig = LINKLAYER_IO_OVER;
@@ -369,17 +421,99 @@ int GetDpmProcessPic(uint32_t *srcBuf, int fdDevice)
 			retVal = -7;
 			printf("clear dpmOver reg failed\n");
 		}
-		sprintf(jpegName, "%s", jpegName);
-		//sprintf(jpegName, "%d.jpg", (picNum + 1));
-		//printf("start compress the jpeg\n");
+		//formatting and save output picture,create the outputDir.
+
+		if (opendir(oPictureInfor.jpegName[picNum]) != NULL)
+		{
+			retVal = chdir(oPictureInfor.jpegName[picNum]);
+			if (retVal == 0)
+			{
+				remove("0.jpg");
+				remove("1.jpg");
+				remove("manifest.txt");
+			}
+			retVal = chdir("..");
+			retVal = remove(oPictureInfor.jpegName[picNum]);
+			if (retVal == 0)
+			{
+			}
+			else
+			{
+				printf("remove error\n");
+			}
+		}
+		else
+		{
+			//directory is not exist
+		}
+
+		retVal = mkdir(oPictureInfor.jpegName[picNum], "0777");
+		if (retVal == 0)
+		{
+			retVal = chmod(oPictureInfor.jpegName[picNum],
+					S_IROTH | S_IWOTH | S_IXOTH);
+			if (retVal == 0)
+			{
+			}
+			else
+			{
+				retVal = -4;
+				printf("chmod the outDir error\n");
+			}
+			retVal = chdir(oPictureInfor.jpegName[picNum]);
+			if (retVal == 0)
+			{
+				if ((oriOutFile = fopen("0.jpg", "wb")) == NULL)
+				{
+					fprintf(stderr, "can't open 0.jpg\n");
+					retVal = -1;
+					exit(1);
+				}
+				if ((subOutFile = fopen("1.jpg", "wb")) == NULL)
+				{
+					fprintf(stderr, "can't open 1.jpg\n");
+					retVal = -1;
+					exit(1);
+				}
+				if ((manOutFile = fopen("manifest.txt", "wb")) == NULL)
+				{
+					fprintf(stderr, "can't open manifest\n");
+					retVal = -1;
+					exit(1);
+				}
+				//return to out dir
+				retVal = chdir("..");
+			}
+			else
+			{
+				printf("chdir picoutDir failed\n");
+				retVal = -3;
+			}
+		}
+		else
+		{
+			printf("mkdir picoutDir error\n");
+		}
+
+		//save original picture
+		saveOriginalPicture((char *) oPictureInfor.originalPicAddr[picNum],
+				oPictureInfor.originalPicLength[picNum], oriOutFile);
+		//save sub picture
 		rgb2jpeg((char *) sPictureInfor.subPicAddr[picNum],
 				sPictureInfor.subWidth[picNum], sPictureInfor.subHeight[picNum],
-				jpegName);
+				subOutFile);
+		//save location position
+		saveUrlToManifest(oPictureInfor.urlString[picNum],
+				sPictureInfor.subXpoint[picNum],
+				sPictureInfor.subYpoint[picNum], sPictureInfor.subWidth[picNum],
+				sPictureInfor.subHeight[picNum], manOutFile);
 		sPictureInfor.subPicNums++;
 		picNum++;
+		free(oPictureInfor.originalPicAddr[picNum]);
 		free(sPictureInfor.subPicAddr[picNum]);
+
 	}
-	printf("the end address is %u\n", (int) pSrc);
+
 	return retVal;
 }
 int startDpm(Arguments* pArguments)
@@ -574,7 +708,7 @@ int startDpm(Arguments* pArguments)
 					+ (downloadEnd.tv_usec - downloadStart.tv_usec));
 			printf("the dpm elapse %f ms\n", timeElapse / 1000);
 			//get dpm sub picture info
-			GetDpmProcessPic(pLinkLayerBuffer->pInBuffer, fdDevice);
+			GetDpmProcessPic(pLinkLayerBuffer->pInBuffer, fdDevice, pArguments);
 
 		}
 		else
@@ -585,7 +719,7 @@ int startDpm(Arguments* pArguments)
 
 	}
 
-// release the resource.
+	// release the resource.
 	munmap(g_pMmapAddr, mmapAddrLength);
 	free(pLinkLayerBuffer);
 	close(fdDevice);

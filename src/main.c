@@ -444,7 +444,7 @@ int GetDpmProcessPic(uint32_t *srcBuf, int fdDevice, Arguments* pArguments)
 		}
 		else
 		{
-			//directory is not exist
+			//directory is not exist,then we need to mkdir
 		}
 
 		retVal = mkdir(oPictureInfor.jpegName[picNum], "0777");

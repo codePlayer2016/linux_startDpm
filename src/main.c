@@ -257,13 +257,13 @@ int saveUrlToManifest(char *urlName, int xPoint, int yPoint, int width,
 		int height, FILE *manOutFile)
 {
 	int retVal = 0;
-	char x[4],y[4],w[4],h[4];
+	char x[4], y[4], w[4], h[4];
 	char locPosition[100];
 
-	sprintf(x,"%d",xPoint);
-	sprintf(y,"%d",yPoint);
-	sprintf(w,"%d",width);
-	sprintf(h,"%d",height);
+	sprintf(x, "%d", xPoint);
+	sprintf(y, "%d", yPoint);
+	sprintf(w, "%d", width);
+	sprintf(h, "%d", height);
 	strcpy(locPosition, x);
 	strcat(locPosition, ",");
 	strcat(locPosition, y);
@@ -272,10 +272,10 @@ int saveUrlToManifest(char *urlName, int xPoint, int yPoint, int width,
 	strcat(locPosition, ",");
 	strcat(locPosition, h);
 	//write urlName
-	fputs(urlName,manOutFile);
-	fputc('\n',manOutFile);
+	fputs(urlName, manOutFile);
+	fputc('\n', manOutFile);
 	//write location position
-	fputs(locPosition,manOutFile);
+	fputs(locPosition, manOutFile);
 
 	fclose(manOutFile);
 	return (retVal);
@@ -408,19 +408,7 @@ int GetDpmProcessPic(uint32_t *srcBuf, int fdDevice, Arguments* pArguments)
 				sPictureInfor.subPicLength[picNum]);
 
 		pSrc = (pSrc + (sPictureInfor.subPicLength[picNum] + 4) / 4);
-		//after pc get data,we should set pc_over_ctl to notify dsp,pc have get finish data
-		int ovConfig = LINKLAYER_IO_OVER;
-		retIoVal = ioctl(fdDevice, DPU_IO_CMD_CHANGOVERREG, &ovConfig);
 
-		if (retIoVal != -1)
-		{
-			//printf("clear dpmOver reg success\n");
-		}
-		else
-		{
-			retVal = -7;
-			printf("clear dpmOver reg failed\n");
-		}
 		//formatting and save output picture,create the outputDir.
 
 		if (opendir(oPictureInfor.jpegName[picNum]) != NULL)
@@ -446,7 +434,6 @@ int GetDpmProcessPic(uint32_t *srcBuf, int fdDevice, Arguments* pArguments)
 		{
 			//directory is not exist,then we need to mkdir
 		}
-
 		retVal = mkdir(oPictureInfor.jpegName[picNum], "0777");
 		if (retVal == 0)
 		{
@@ -513,6 +500,8 @@ int GetDpmProcessPic(uint32_t *srcBuf, int fdDevice, Arguments* pArguments)
 		free(sPictureInfor.subPicAddr[picNum]);
 
 	}
+	//5.20 clear zone Inbuffer
+	memset(srcBuf, 0, RDBUFLENGTH);
 
 	return retVal;
 }
@@ -521,6 +510,7 @@ int startDpm(Arguments* pArguments)
 	int retVal = 0;
 	int retIoVal = 0;
 	float timeElapse = 0;
+	int ovConfig = 0;
 
 	struct timeval downloadStart;
 	struct timeval downloadEnd;
@@ -627,14 +617,10 @@ int startDpm(Arguments* pArguments)
 
 			pFailedPicNUms = (uint32_t *) ((uint8_t *) g_pMmapAddr
 					+ 4 * sizeof(4));
-			printf(
-					"g_pMmapAddr=0x%x,pDownloadPicNums=0x%x,pDownloadPicNums=0x%x\n",
-					g_pMmapAddr, pDownloadPicNums, pFailedPicNUms);
-			waitWriteBufferReadyParam.waitType = LINKLAYER_IO_START;
-			waitWriteBufferReadyParam.pendTime = WAITTIME;
-			waitWriteBufferReadyParam.pBufStatus = &status;
-			retIoVal = ioctl(fdDevice, DPU_IO_CMD_WAITDPMSTART,
-					&waitWriteBufferReadyParam); // dsp should init the RD register to empty in DSP.
+//			printf(
+//					"g_pMmapAddr=0x%x,pDownloadPicNums=0x%x,pDownloadPicNums=0x%x\n",
+//					g_pMmapAddr, pDownloadPicNums, pFailedPicNUms);
+
 		}
 		else
 		{
@@ -642,27 +628,17 @@ int startDpm(Arguments* pArguments)
 			retVal = -5;
 		}
 	}
-	//set dpmStart reg
-	if (retVal == 0)
-	{
-		printf("change dpmstart reg \n");
-		int stConfig = LINKLAYER_IO_START;
-		retIoVal = ioctl(fdDevice, DPU_IO_CMD_CHANGEREG, &stConfig);
-		if (retIoVal != -1)
-		{
-			printf("change dpmstart reg over\n");
-		}
-		else
-		{
-			retVal = -6;
-			printf("ioctl for change dpmstart reg error\n");
-		}
-	}
+
+	waitWriteBufferReadyParam.waitType = LINKLAYER_IO_START;
+	waitWriteBufferReadyParam.pendTime = WAITTIME;
+	waitWriteBufferReadyParam.pBufStatus = &status;
+	retIoVal = ioctl(fdDevice, DPU_IO_CMD_WAITDPMSTART,
+			&waitWriteBufferReadyParam); // dsp should init the RD register to empty in DSP.
 	//clear dpmOver reg
 	if (retVal == 0)
 	{
 		printf("clear dpmOver reg");
-		int ovConfig = LINKLAYER_IO_OVER;
+		ovConfig = LINKLAYER_IO_OVER;
 		retIoVal = ioctl(fdDevice, DPU_IO_CMD_CHANGOVERREG, &ovConfig);
 
 		if (retIoVal != -1)
@@ -675,49 +651,112 @@ int startDpm(Arguments* pArguments)
 			printf("clear dpmOver reg failed\n");
 		}
 	}
-	// interrupt to DSP.
-	if (retVal == 0)
+	while (1)
 	{
-		printf("trigger interrupt to DSP\n");
-		pInterruptPollParams->interruptAndPollDirect = 0;
-
-		retIoVal = ioctl(fdDevice, DPU_IO_CMD_INTERRUPT, pInterruptPollParams);
-
-		if (retIoVal != -1)
+		//set dpmStart reg
+		if (retVal == 0)
 		{
-			printf("trigger the DSP over\n");
-		}
-		else
-		{
-			retVal = -7;
-			printf("ioctl for interrupt error\n");
-		}
-	}
-
-	// wait the DSP dpm process over and get the information.
-	if (retVal == 0)
-	{
-
-		retIoVal = ioctl(fdDevice, DPU_IO_CMD_WAITDPM, pInterruptPollParams);
-		if (retIoVal != -1)
-		{
-
-			printf("the Dpm finished\n");
-			gettimeofday(&downloadEnd, NULL);
-			timeElapse = ((downloadEnd.tv_sec - downloadStart.tv_sec) * 1000000
-					+ (downloadEnd.tv_usec - downloadStart.tv_usec));
-			printf("the dpm elapse %f ms\n", timeElapse / 1000);
-			//get dpm sub picture info
-			GetDpmProcessPic(pLinkLayerBuffer->pInBuffer, fdDevice, pArguments);
-
-		}
-		else
-		{
-			retVal = -8;
-			printf("ioctl for DPU_IO_CMD_WAITDPM failed\n");
+			printf("change dpmstart reg \n");
+			int stConfig = LINKLAYER_IO_START;
+			retIoVal = ioctl(fdDevice, DPU_IO_CMD_CHANGEREG, &stConfig);
+			if (retIoVal != -1)
+			{
+				printf("change dpmstart reg over\n");
+			}
+			else
+			{
+				retVal = -6;
+				printf("ioctl for change dpmstart reg error\n");
+			}
 		}
 
-	}
+		// interrupt to DSP.
+		if (retVal == 0)
+		{
+			printf("trigger interrupt to DSP\n");
+			pInterruptPollParams->interruptAndPollDirect = 0;
+
+			retIoVal = ioctl(fdDevice, DPU_IO_CMD_INTERRUPT,
+					pInterruptPollParams);
+
+			if (retIoVal != -1)
+			{
+				printf("trigger the DSP over\n");
+			}
+			else
+			{
+				retVal = -7;
+				printf("ioctl for interrupt error\n");
+			}
+		}
+
+		// wait the DSP dpm process over and get the information.
+		if (retVal == 0)
+		{
+
+			retIoVal = ioctl(fdDevice, DPU_IO_CMD_WAITDPM,
+					pInterruptPollParams);
+			if (retIoVal != -1)
+			{
+
+				printf("the Dpm finished\n");
+				gettimeofday(&downloadEnd, NULL);
+				timeElapse = ((downloadEnd.tv_sec - downloadStart.tv_sec)
+						* 1000000
+						+ (downloadEnd.tv_usec - downloadStart.tv_usec));
+				printf("the dpm elapse %f ms\n", timeElapse / 1000);
+				//get dpm sub picture info
+				GetDpmProcessPic(pLinkLayerBuffer->pInBuffer, fdDevice,
+						pArguments);
+				//after pc get data,we should set pc_over_ctl to notify dsp,pc have get finish data
+				ovConfig = LINKLAYER_IO_OVER;
+				retIoVal = ioctl(fdDevice, DPU_IO_CMD_CHANGOVERREG, &ovConfig);
+
+				if (retIoVal != -1)
+				{
+					//printf("clear dpmOver reg success\n");
+				}
+				else
+				{
+					retVal = -7;
+					printf("clear dpmOver reg failed\n");
+				}
+
+				//send interrupt to dsp
+				printf(
+						"trigger interrupt to DSP and notify pc have finished data\n");
+				pInterruptPollParams->interruptAndPollDirect = 0;
+
+				retIoVal = ioctl(fdDevice, DPU_IO_CMD_INTERRUPT,
+						pInterruptPollParams);
+
+				if (retIoVal != -1)
+				{
+					printf("trigger the DSP over\n");
+				}
+				else
+				{
+					retVal = -7;
+					printf("ioctl for interrupt error\n");
+				}
+
+			}
+			else
+			{
+				retVal = -8;
+				printf("ioctl for DPU_IO_CMD_WAITDPM failed\n");
+			}
+
+		}
+		waitWriteBufferReadyParam.pBufStatus = &status;
+		retIoVal = ioctl(fdDevice, DPU_IO_CMD_CHECKDPMALLOVER,
+				&waitWriteBufferReadyParam); // dsp should init the RD register to empty in DSP.
+		if (status == 0)
+		{
+			printf("pc have check dpm all over,so break while\n");
+			break;
+		}
+	} //while
 
 	// release the resource.
 	munmap(g_pMmapAddr, mmapAddrLength);

@@ -526,9 +526,10 @@ int startDpm(Arguments* pArguments)
 	DPUDriver_WaitBufferReadyParam waitWriteBufferReadyParam;
 	int status = -1;
 	int result = -1;
-	uint32_t *pUrlNums = NULL;
-	uint32_t *pDownloadPicNums = NULL;
-	uint32_t *pFailedPicNUms = NULL;
+	int one = 1;
+	int two = 2;
+	int three = 3;
+	uint32_t *pModelType = NULL;
 
 	LinkLayerBuffer *pLinkLayerBuffer = (LinkLayerBuffer *) malloc(
 			sizeof(LinkLayerBuffer));
@@ -609,17 +610,22 @@ int startDpm(Arguments* pArguments)
 					+ PAGE_SIZE * 2);
 			pLinkLayerBuffer->pInBuffer = (uint32_t *) ((uint8_t *) g_pMmapAddr
 					+ PAGE_SIZE * 2 * 2);
-
-			pUrlNums = (uint32_t *) ((uint8_t *) g_pMmapAddr + PAGE_SIZE
-					+ 3 * sizeof(4));
-			pDownloadPicNums = (uint32_t *) ((uint8_t *) g_pMmapAddr
-					+ 3 * sizeof(4));
-
-			pFailedPicNUms = (uint32_t *) ((uint8_t *) g_pMmapAddr
-					+ 4 * sizeof(4));
-//			printf(
-//					"g_pMmapAddr=0x%x,pDownloadPicNums=0x%x,pDownloadPicNums=0x%x\n",
-//					g_pMmapAddr, pDownloadPicNums, pFailedPicNUms);
+#if 1
+			pModelType = (uint32_t *) ((uint8_t *) g_pMmapAddr + PAGE_SIZE
+					+ 4 * sizeof(int));
+			if (strcmp(pArguments->pModel, "motor") == 0)
+			{
+				*pModelType = one;
+			}
+			if (strcmp(pArguments->pModel, "car") == 0)
+			{
+				*pModelType = two;
+			}
+			if (strcmp(pArguments->pModel, "person") == 0)
+			{
+				*pModelType = three;
+			}
+#endif
 
 		}
 		else

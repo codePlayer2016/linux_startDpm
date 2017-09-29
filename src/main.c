@@ -26,7 +26,7 @@
 #include "jpeglib.h"
 #define IMG_SIZE4_DSP (0x100000)
 #define PAGE_SIZE (0x1000)
-#define WAITTIME (0x07FFFFFF)
+#define WAITTIME (0xFFFFFFFF)
 #define WTBUFLENGTH (2*4*1024)
 #define RDBUFLENGTH (4*1024*1024-4*4*1024)
 #define URL_ITEM_SIZE (102)
@@ -37,8 +37,9 @@
 
 typedef struct _tagArguments
 {
-	char *outPutPath;
+	char *pUrlListPath;
 	char *pDevicePath;
+	char *outPutPath;
 	char *pModel;
 } Arguments;
 
@@ -96,12 +97,13 @@ void showError(int retVal);
 int parseArguments(int argc, char **argv, Arguments* pArguments);
 int startDpm(Arguments* pArguments);
 int bgr2rgb(char* pImgData, int imgWidth, int imgHeight);
-
+static int getUrlList(FILE *fpUrlList, char *pUrlList, int *pUrlItmeNum);
 int main(int argc, char **argv)
 {
 	// TODO: -f <url list file>
 	// TODO: -t <device>
 	// TODO: --help
+	// todo: // start-dpm -f ./urlList.txt -t dpu0 -o ./out -m car
 	int retVal = 0;
 	Arguments arguments;
 
@@ -136,30 +138,30 @@ void showError(int retVal)
 {
 
 }
-
+// start-dpm -f ./urlList.txt -t dpu0 -o ./out -m car
 int parseArguments(int argc, char **argv, Arguments* pArguments)
 {
 	int retVal = 0;
 
-	if (argc == 7)
+	if (argc == 9)
 	{
-		if (strcasecmp("-o", argv[1]) == 0)
+		if (strcasecmp("-f", argv[1]) == 0)
 		{
-			pArguments->outPutPath = argv[2];
-			printf("the output file is %s\n", pArguments->outPutPath);
+			pArguments->pUrlListPath = argv[2];
+			printf("the input file is %s\n", pArguments->pUrlListPath);
 		}
 		else
 		{
 			retVal = -1;
-			printf("error:out file is %s\n", argv[2]);
+			printf("error:input file is %s\n", argv[2]);
 		}
 
-		if ((retVal == 0) && (pArguments->outPutPath != NULL))
+		if ((retVal == 0) && (pArguments->pUrlListPath != NULL))
 		{
 			if (strcasecmp("-t", argv[3]) == 0)
 			{
 				pArguments->pDevicePath = argv[4];
-				printf("the target device is %s\n", pArguments->pDevicePath);
+				printf("the device is %s\n", pArguments->pDevicePath);
 			}
 			else
 			{
@@ -168,11 +170,22 @@ int parseArguments(int argc, char **argv, Arguments* pArguments)
 			}
 		}
 
-		if ((retVal == 0) && (pArguments->pDevicePath != NULL))
+		if (strcasecmp("-o", argv[5]) == 0)
 		{
-			if (strcasecmp("-m", argv[5]) == 0)
+			pArguments->outPutPath = argv[6];
+			printf("the output file is %s\n", pArguments->outPutPath);
+		}
+		else
+		{
+			retVal = -1;
+			printf("error:out file is %s\n", argv[6]);
+		}
+
+		if ((retVal == 0) && (pArguments->outPutPath != NULL))
+		{
+			if (strcasecmp("-m", argv[7]) == 0)
 			{
-				pArguments->pModel = argv[6];
+				pArguments->pModel = argv[8];
 			}
 			else
 			{
@@ -224,8 +237,7 @@ int rgb2jpeg(char *pRgbData, int rgbWidth, int rgbHeigth, FILE *outfile)
 
 	for (indexWidth = 0; indexWidth < cinfo.image_height; indexWidth++)
 	{
-		row_pointer[0] =
-				(JSAMPROW) (pRgbData + cinfo.next_scanline * row_stride);
+		row_pointer[0] = (JSAMPROW) (pRgbData + cinfo.next_scanline * row_stride);
 		jpeg_write_scanlines(&cinfo, row_pointer, 1);
 	}
 	jpeg_finish_compress(&cinfo);
@@ -253,8 +265,7 @@ int saveOriginalPicture(char *pRgbData, int originalLength, FILE *oriOutFile)
 	fclose(oriOutFile);
 	return (retVal);
 }
-int saveUrlToManifest(char *urlName, int xPoint, int yPoint, int width,
-		int height, FILE *manOutFile)
+int saveUrlToManifest(char *urlName, int xPoint, int yPoint, int width, int height, FILE *manOutFile)
 {
 	int retVal = 0;
 	char x[4], y[4], w[4], h[4];
@@ -367,23 +378,23 @@ int GetDpmProcessPic(uint32_t *srcBuf, int fdDevice, Arguments* pArguments)
 	char oJpegName[40];
 	char sJpegName[40];
 	uint32_t *pSrc = srcBuf;
-	while ((*pSrc) != END_FLAG)
+	//while ((*pSrc) != END_FLAG)
 	{
 		/***********************get original picture******************************/
 
 		memcpy(oPictureInfor.urlString[picNum], pSrc, 120);
 		pSrc = (pSrc + 120 / 4);
+		printf("url=%s\n", oPictureInfor.urlString[picNum]);
 
 		memcpy(oPictureInfor.jpegName[picNum], pSrc, 40);
 		pSrc = (pSrc + 40 / 4);
+		printf("jpegName=%s\n", oPictureInfor.jpegName[picNum]);
 
 		memcpy(&oPictureInfor.originalPicLength[picNum], pSrc, 4);
 		pSrc += 1;
 
-		oPictureInfor.originalPicAddr[picNum] = (uint8_t *) malloc(
-				oPictureInfor.originalPicLength[picNum] * sizeof(char));
-		memcpy(oPictureInfor.originalPicAddr[picNum], ((uint8_t *) pSrc),
-				oPictureInfor.originalPicLength[picNum]);
+		oPictureInfor.originalPicAddr[picNum] = (uint8_t *) malloc(oPictureInfor.originalPicLength[picNum] * sizeof(char));
+		memcpy(oPictureInfor.originalPicAddr[picNum], ((uint8_t *) pSrc), oPictureInfor.originalPicLength[picNum]);
 		pSrc = (pSrc + (oPictureInfor.originalPicLength[picNum] + 4) / 4);
 
 		/***********************get sub picture******************************/
@@ -402,10 +413,8 @@ int GetDpmProcessPic(uint32_t *srcBuf, int fdDevice, Arguments* pArguments)
 		memcpy(&sPictureInfor.subPicLength[picNum], pSrc, sizeof(int));
 		pSrc += 1;
 
-		sPictureInfor.subPicAddr[picNum] = (uint8_t *) malloc(
-				sPictureInfor.subPicLength[picNum] * sizeof(char));
-		memcpy(sPictureInfor.subPicAddr[picNum], ((uint8_t *) pSrc),
-				sPictureInfor.subPicLength[picNum]);
+		sPictureInfor.subPicAddr[picNum] = (uint8_t *) malloc(sPictureInfor.subPicLength[picNum] * sizeof(char));
+		memcpy(sPictureInfor.subPicAddr[picNum], ((uint8_t *) pSrc), sPictureInfor.subPicLength[picNum]);
 
 		pSrc = (pSrc + (sPictureInfor.subPicLength[picNum] + 4) / 4);
 
@@ -437,8 +446,7 @@ int GetDpmProcessPic(uint32_t *srcBuf, int fdDevice, Arguments* pArguments)
 		retVal = mkdir(oPictureInfor.jpegName[picNum], "0777");
 		if (retVal == 0)
 		{
-			retVal = chmod(oPictureInfor.jpegName[picNum],
-					S_IROTH | S_IWOTH | S_IXOTH);
+			retVal = chmod(oPictureInfor.jpegName[picNum], S_IROTH | S_IWOTH | S_IXOTH);
 			if (retVal == 0)
 			{
 			}
@@ -483,19 +491,14 @@ int GetDpmProcessPic(uint32_t *srcBuf, int fdDevice, Arguments* pArguments)
 		}
 
 		//save original picture
-		saveOriginalPicture((char *) oPictureInfor.originalPicAddr[picNum],
-				oPictureInfor.originalPicLength[picNum], oriOutFile);
+		saveOriginalPicture((char *) oPictureInfor.originalPicAddr[picNum], oPictureInfor.originalPicLength[picNum], oriOutFile);
 		//save sub picture
-		rgb2jpeg((char *) sPictureInfor.subPicAddr[picNum],
-				sPictureInfor.subWidth[picNum], sPictureInfor.subHeight[picNum],
-				subOutFile);
+		rgb2jpeg((char *) sPictureInfor.subPicAddr[picNum], sPictureInfor.subWidth[picNum], sPictureInfor.subHeight[picNum], subOutFile);
 		//save location position
-		saveUrlToManifest(oPictureInfor.urlString[picNum],
-				sPictureInfor.subXpoint[picNum],
-				sPictureInfor.subYpoint[picNum], sPictureInfor.subWidth[picNum],
-				sPictureInfor.subHeight[picNum], manOutFile);
-		sPictureInfor.subPicNums++;
-		picNum++;
+		saveUrlToManifest(oPictureInfor.urlString[picNum], sPictureInfor.subXpoint[picNum], sPictureInfor.subYpoint[picNum],
+				sPictureInfor.subWidth[picNum], sPictureInfor.subHeight[picNum], manOutFile);
+		//sPictureInfor.subPicNums++;
+		//picNum++;
 		free(oPictureInfor.originalPicAddr[picNum]);
 		free(sPictureInfor.subPicAddr[picNum]);
 
@@ -519,7 +522,7 @@ int startDpm(Arguments* pArguments)
 	const char dev_name[] = "/dev/DPU_driver_linux";
 	char arrayUrlList[50 * 102];
 	char *pArrayUList = arrayUrlList;
-	int urlItmeNum = 0;
+	//int urlItmeNum = 0;
 	int wtConfig = 0;
 	uint32_t *g_pMmapAddr = NULL;
 	uint32_t mmapAddrLength = (4 * 1024 * 1024);
@@ -530,12 +533,22 @@ int startDpm(Arguments* pArguments)
 	int two = 2;
 	int three = 3;
 	uint32_t *pModelType = NULL;
+	uint32_t *pUrlNums = NULL;
+	uint32_t *pDownloadPicNums = NULL;
+	uint32_t *pFailedPicNUms = NULL;
+	char urlItem[256];
+	char *pUrlItem = urlItem;
+	char *pArrayUrlList = arrayUrlList;
+	int enterCharPos = 0;
+	int urlItemNum = 1;
+	uint32_t pollSynSignalTarget = 0x83;
+	volatile uint32_t *pSynSignalStatus = NULL;
 
-	LinkLayerBuffer *pLinkLayerBuffer = (LinkLayerBuffer *) malloc(
-			sizeof(LinkLayerBuffer));
+	LinkLayerBuffer *pLinkLayerBuffer = (LinkLayerBuffer *) malloc(sizeof(LinkLayerBuffer));
 	interruptAndPollParam interruptPollParams;
-	interruptAndPollParam *pInterruptPollParams =
-			(interruptAndPollParam *) &interruptPollParams;
+	interruptAndPollParam *pInterruptPollParams = (interruptAndPollParam *) &interruptPollParams;
+	DPUDriver_WaitBufferReadyParam waitBufferReadyParam;
+	DPUDriver_WaitBufferReadyParam *pWaitBufferReadyParam = &waitBufferReadyParam;
 
 	if (pLinkLayerBuffer != NULL)
 	{
@@ -546,6 +559,7 @@ int startDpm(Arguments* pArguments)
 	{
 		retVal = -1;
 	}
+
 	// fopen the device.
 	if (retVal == 0)
 	{
@@ -597,68 +611,182 @@ int startDpm(Arguments* pArguments)
 		}
 	}
 
+	// get the pic list.
+	{
+		// get the url from the urlList.txt.
+		fpUrlList = fopen(pArguments->pUrlListPath, "rb");
+		if (fpUrlList != NULL)
+		{
+			printf("open file success!\n");
+		}
+		else
+		{
+			printf("open the %s failed\n", pArguments->pUrlListPath);
+			retVal = -3;
+			return retVal;
+		}
+#if 0
+		retVal = getUrlList(fpUrlList, pArrayUList, &urlItmeNum);
+		if (retVal == 0)
+		{
+			fclose(fpUrlList);
+		}
+		else
+		{
+			printf("get url from urlList File failed\n");
+			retVal = -4;
+			return retVal;
+		}
+#endif
+	}
+
 	// mmap and get the registers.
 	if (retVal == 0)
 	{
-		g_pMmapAddr = (uint32_t *) mmap(NULL, mmapAddrLength,
-				PROT_READ | PROT_WRITE, MAP_SHARED, fdDevice, 0);
+		g_pMmapAddr = (uint32_t *) mmap(NULL, mmapAddrLength, PROT_READ | PROT_WRITE, MAP_SHARED, fdDevice, 0);
 		// polling the dsp can be written to.
 		if ((int) g_pMmapAddr != -1)
 		{
 			printf("mmap finished\n");
-			pLinkLayerBuffer->pOutBuffer = (uint32_t *) ((uint8_t *) g_pMmapAddr
-					+ PAGE_SIZE * 2);
-			pLinkLayerBuffer->pInBuffer = (uint32_t *) ((uint8_t *) g_pMmapAddr
-					+ PAGE_SIZE * 2 * 2);
-#if 1
-			pModelType = (uint32_t *) ((uint8_t *) g_pMmapAddr + PAGE_SIZE
-					+ 4 * sizeof(int));
-			if (strcmp(pArguments->pModel, "motor") == 0)
-			{
-				*pModelType = one;
-			}
-			if (strcmp(pArguments->pModel, "car") == 0)
-			{
-				*pModelType = two;
-			}
-			if (strcmp(pArguments->pModel, "person") == 0)
-			{
-				*pModelType = three;
-			}
-#endif
+			pLinkLayerBuffer->pOutBuffer = (uint32_t *) ((uint8_t *) g_pMmapAddr + PAGE_SIZE * 2);
+			pLinkLayerBuffer->pInBuffer = (uint32_t *) ((uint8_t *) g_pMmapAddr + PAGE_SIZE * 2 * 2);
+			pSynSignalStatus = (uint32_t *) ((uint8_t *) g_pMmapAddr + 8 * sizeof(int));
 
 		}
 		else
 		{
 			printf("mmap failed\n");
 			retVal = -5;
+			return (retVal);
+		}
+	}
+
+	{
+		//PC_urlNumsReg
+		pUrlNums = (uint32_t *) ((uint8_t *) g_pMmapAddr + PAGE_SIZE + 3 * sizeof(int));
+		//pDownloadPicNums = (uint32_t *) ((uint8_t *) g_pMmapAddr + 3 * sizeof(int));
+		//pFailedPicNUms = (uint32_t *) ((uint8_t *) g_pMmapAddr + 4 * sizeof(int));
+	}
+
+	{
+		pModelType = (uint32_t *) ((uint8_t *) g_pMmapAddr + PAGE_SIZE + 4 * sizeof(int));
+		if (strcmp(pArguments->pModel, "motor") == 0)
+		{
+			*pModelType = one;
+		}
+		if (strcmp(pArguments->pModel, "car") == 0)
+		{
+			*pModelType = two;
+		}
+		if (strcmp(pArguments->pModel, "person") == 0)
+		{
+			*pModelType = three;
 		}
 	}
 
 	waitWriteBufferReadyParam.waitType = LINKLAYER_IO_START;
 	waitWriteBufferReadyParam.pendTime = WAITTIME;
 	waitWriteBufferReadyParam.pBufStatus = &status;
-	retIoVal = ioctl(fdDevice, DPU_IO_CMD_WAITDPMSTART,
-			&waitWriteBufferReadyParam); // dsp should init the RD register to empty in DSP.
-	//clear dpmOver reg
-	if (retVal == 0)
+	retVal = ioctl(fdDevice, DPU_IO_CMD_WAITDPMSTART, &waitWriteBufferReadyParam); // dsp should init the RD register to empty in DSP.
+	if (retVal == -1)
 	{
-		printf("clear dpmOver reg");
-		ovConfig = LINKLAYER_IO_OVER;
-		retIoVal = ioctl(fdDevice, DPU_IO_CMD_CHANGOVERREG, &ovConfig);
-
-		if (retIoVal != -1)
-		{
-			printf("clear dpmOver reg success\n");
-		}
-		else
-		{
-			retVal = -7;
-			printf("clear dpmOver reg failed\n");
-		}
+		printf("ioctl error\n");
+		return (retVal);
 	}
-	while (1)
+	if (status != 0)
 	{
+		//printf("wait dpmstart failed\n");
+		//return (retVal);
+	}
+
+	printf("be ready to get url.\n");
+	//read the file.
+	//memcpy(pUrlItem,"http://192.168.30.113:8088/61.jpg    ",35);
+	while (fgets(pUrlItem, 255, fpUrlList) != NULL)
+	{
+		printf("enter loop.\n");
+		if (strlen(pUrlItem) > 20)
+		{
+			enterCharPos = 0;
+			enterCharPos = (strlen(pUrlItem) - strlen("\n"));
+			pUrlItem[enterCharPos] = '\0';
+			memcpy(pArrayUrlList, pUrlItem, enterCharPos);
+			printf("the url is %s\n", pArrayUrlList);
+			//pArrayUrlList += URL_ITEM_SIZE;
+			//urlItemNum++;
+		}
+		else if (strlen(pUrlItem)==strlen("endOfFile\n\r"))
+		{
+			printf("pocessOver");
+			return (retVal);
+		}
+
+		// input the para to dsp.
+		{
+			memcpy(pUrlNums, &urlItemNum, sizeof(int));
+			memcpy(pLinkLayerBuffer->pOutBuffer, pArrayUrlList, (urlItemNum * URL_ITEM_SIZE));
+		}
+		//triggle pci Interrupt to dsp
+		{
+			gettimeofday(&downloadStart, NULL);
+			pInterruptPollParams->interruptAndPollDirect = 0;
+			retVal = ioctl(fdDevice, DPU_IO_CMD_INTERRUPT, pInterruptPollParams);
+			if (retVal != -1)
+			{
+				printf("trigger the DSP over\n");
+			}
+			else
+			{
+				retVal = -7;
+				printf("ioctl for interrupt error\n");
+				return (retVal);
+			}
+		}
+
+		//wait dsp write.
+		{
+			pWaitBufferReadyParam->pBufStatus = &status;
+			pWaitBufferReadyParam->waitType = LINKLAYER_IO_READ_QFIN;
+			pWaitBufferReadyParam->pendTime = WAITTIME;
+			ioctl(fdDevice, DPU_IO_CMD_WAITBUFFERREADY, pWaitBufferReadyParam);
+			if (retVal == -1)
+			{
+				printf("ioctl error\n");
+				return (retVal);
+			}
+			if (status != 0)
+			{
+				printf("wait dsp write failed\n");
+				return (retVal);
+			}
+		}
+		pollSynSignalTarget++;
+		while (1)
+		{
+			if (*pSynSignalStatus == pollSynSignalTarget)
+			{
+				break;
+
+			}
+			else
+			{
+				printf("");
+			};
+		}
+		//read.
+		{
+			printf("the Dpm finished\n");
+			//gettimeofday(&downloadStart, NULL);
+			gettimeofday(&downloadEnd, NULL);
+			timeElapse = ((downloadEnd.tv_sec - downloadStart.tv_sec) * 1000000 + (downloadEnd.tv_usec - downloadStart.tv_usec));
+			printf("the dpm elapse %f ms\n", timeElapse / 1000);
+			//get dpm sub picture info
+			GetDpmProcessPic(pLinkLayerBuffer->pInBuffer, fdDevice, pArguments);
+			//after pc get data,we should set pc_over_ctl to notify dsp,pc have get finish data
+		}
+
+#if 0
+
 		//set dpmStart reg
 		if (retVal == 0)
 		{
@@ -682,8 +810,7 @@ int startDpm(Arguments* pArguments)
 			printf("trigger interrupt to DSP\n");
 			pInterruptPollParams->interruptAndPollDirect = 0;
 
-			retIoVal = ioctl(fdDevice, DPU_IO_CMD_INTERRUPT,
-					pInterruptPollParams);
+			retIoVal = ioctl(fdDevice, DPU_IO_CMD_INTERRUPT, pInterruptPollParams);
 
 			if (retIoVal != -1)
 			{
@@ -700,20 +827,16 @@ int startDpm(Arguments* pArguments)
 		if (retVal == 0)
 		{
 
-			retIoVal = ioctl(fdDevice, DPU_IO_CMD_WAITDPM,
-					pInterruptPollParams);
+			retIoVal = ioctl(fdDevice, DPU_IO_CMD_WAITDPM, pInterruptPollParams);
 			if (retIoVal != -1)
 			{
 
 				printf("the Dpm finished\n");
 				gettimeofday(&downloadEnd, NULL);
-				timeElapse = ((downloadEnd.tv_sec - downloadStart.tv_sec)
-						* 1000000
-						+ (downloadEnd.tv_usec - downloadStart.tv_usec));
+				timeElapse = ((downloadEnd.tv_sec - downloadStart.tv_sec) * 1000000 + (downloadEnd.tv_usec - downloadStart.tv_usec));
 				printf("the dpm elapse %f ms\n", timeElapse / 1000);
 				//get dpm sub picture info
-				GetDpmProcessPic(pLinkLayerBuffer->pInBuffer, fdDevice,
-						pArguments);
+				GetDpmProcessPic(pLinkLayerBuffer->pInBuffer, fdDevice, pArguments);
 				//after pc get data,we should set pc_over_ctl to notify dsp,pc have get finish data
 				ovConfig = LINKLAYER_IO_OVER;
 				retIoVal = ioctl(fdDevice, DPU_IO_CMD_CHANGOVERREG, &ovConfig);
@@ -729,12 +852,10 @@ int startDpm(Arguments* pArguments)
 				}
 
 				//send interrupt to dsp
-				printf(
-						"trigger interrupt to DSP and notify pc have finished data\n");
+				printf("trigger interrupt to DSP and notify pc have finished data\n");
 				pInterruptPollParams->interruptAndPollDirect = 0;
 
-				retIoVal = ioctl(fdDevice, DPU_IO_CMD_INTERRUPT,
-						pInterruptPollParams);
+				retIoVal = ioctl(fdDevice, DPU_IO_CMD_INTERRUPT, pInterruptPollParams);
 
 				if (retIoVal != -1)
 				{
@@ -755,19 +876,50 @@ int startDpm(Arguments* pArguments)
 
 		}
 		waitWriteBufferReadyParam.pBufStatus = &status;
-		retIoVal = ioctl(fdDevice, DPU_IO_CMD_CHECKDPMALLOVER,
-				&waitWriteBufferReadyParam); // dsp should init the RD register to empty in DSP.
+		retIoVal = ioctl(fdDevice, DPU_IO_CMD_CHECKDPMALLOVER, &waitWriteBufferReadyParam); // dsp should init the RD register to empty in DSP.
 		if (status == 0)
 		{
 			printf("pc have check dpm all over,so break while\n");
 			break;
 		}
+#endif
 	} //while
 
 	// release the resource.
 	munmap(g_pMmapAddr, mmapAddrLength);
 	free(pLinkLayerBuffer);
 	close(fdDevice);
+	return (retVal);
+}
+
+int getUrlList(FILE *fpUrlList, char *pUrlList, int *pUrlItmeNum)
+{
+	int retVal = 0;
+	int i = 0;
+	char urlItem[256];
+	char *pUrlItem = urlItem;
+	char *pArrayUrlList = pUrlList;
+	int enterCharPos = 0;
+	int urlItemNum = 0;
+	while (fgets(pUrlItem, 256, fpUrlList) != NULL)
+	{
+		if (strlen(pUrlItem) > 20)
+		{
+			enterCharPos = 0;
+			enterCharPos = (strlen(pUrlItem) - strlen("\n"));
+			pUrlItem[enterCharPos] = '\0';
+			memcpy(pArrayUrlList, pUrlItem, enterCharPos);
+			printf("the url is %s\n", pArrayUrlList);
+			pArrayUrlList += URL_ITEM_SIZE;
+			urlItemNum++;
+		}
+		else
+		{
+			continue;
+		}
+	}
+	*pUrlItmeNum = urlItemNum;
+	printf("the url item Num is %d\n", *pUrlItmeNum);
 	return (retVal);
 }
 

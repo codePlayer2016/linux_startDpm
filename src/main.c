@@ -682,6 +682,7 @@ int startDpm(Arguments* pArguments)
 		{
 			*pModelType = three;
 		}
+		printf("modeType=%d\n",*pModelType);
 	}
 
 	waitWriteBufferReadyParam.waitType = LINKLAYER_IO_START;
@@ -728,7 +729,6 @@ int startDpm(Arguments* pArguments)
 		}
 		//triggle pci Interrupt to dsp
 		{
-			gettimeofday(&downloadStart, NULL);
 			pInterruptPollParams->interruptAndPollDirect = 0;
 			retVal = ioctl(fdDevice, DPU_IO_CMD_INTERRUPT, pInterruptPollParams);
 			if (retVal != -1)
@@ -745,6 +745,7 @@ int startDpm(Arguments* pArguments)
 
 		//wait dsp write.
 		{
+			gettimeofday(&downloadStart, NULL);
 			pWaitBufferReadyParam->pBufStatus = &status;
 			pWaitBufferReadyParam->waitType = LINKLAYER_IO_READ_QFIN;
 			pWaitBufferReadyParam->pendTime = WAITTIME;
@@ -779,7 +780,7 @@ int startDpm(Arguments* pArguments)
 			//gettimeofday(&downloadStart, NULL);
 			gettimeofday(&downloadEnd, NULL);
 			timeElapse = ((downloadEnd.tv_sec - downloadStart.tv_sec) * 1000000 + (downloadEnd.tv_usec - downloadStart.tv_usec));
-			printf("the dpm elapse %f ms\n", timeElapse / 1000);
+			printf("the dpm elapse %f ms\n", timeElapse / 2000);
 			//get dpm sub picture info
 			GetDpmProcessPic(pLinkLayerBuffer->pInBuffer, fdDevice, pArguments);
 			//after pc get data,we should set pc_over_ctl to notify dsp,pc have get finish data
